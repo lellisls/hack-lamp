@@ -1,4 +1,4 @@
-#/usr/bin/python3
+#!/usr/bin/python3
  
 import gatt
 import time
@@ -6,8 +6,7 @@ import threading
 import argparse
 
 class BTDevice(gatt.Device):
-    light_intensity = 
-    None
+    light_intensity = None
     MAIN_SERVICE_UUID = "00005251-0000-1000-8000-00805f9b34fb"
     LIGHT_INTENSITY_UUID = "00002501-0000-1000-8000-00805f9b34fb"
     AUTH_UUID = "00002506-0000-1000-8000-00805f9b34fb"
