@@ -1,5 +1,6 @@
 // Projeto Curto Circuito – Blynk ESP32
-#include "WiFi.h"
+#include <BLEDevice.h> //Header file for BLE
+#include <WiFi.h>
 
 #include "WifiAuth.h"
 
@@ -15,7 +16,12 @@ String lightState = "off";
 // Assign output variables to GPIO pins
 const int light = 2;
 
-const char* lightOn = "19E5AA";
+const char *lightOn = "19E5AA";
+
+const char *MAC_ADDRESS = "F4:5E:AB:9D:A1:1A";
+const char *MAIN_SERVICE_UUID = "00005251-0000-1000-8000-00805f9b34fb";
+const char *LIGHT_INTENSITY_UUID = "00002501-0000-1000-8000-00805f9b34fb";
+const char *AUTH_UUID = "00002506-0000-1000-8000-00805f9b34fb";
 
 // Set your Static IP address
 IPAddress local_IP(192, 168, 15, 123);
@@ -25,6 +31,60 @@ IPAddress gateway(192, 168, 15, 1);
 IPAddress subnet(255, 255, 0, 0);
 IPAddress primaryDNS(8, 8, 8, 8);   //optional
 IPAddress secondaryDNS(8, 8, 4, 4); //optional
+
+static BLEUUID serviceUUID(MAIN_SERVICE_UUID); //Service UUID of fitnessband obtained through nRF connect application
+static BLEUUID charUUID(LIGHT_INTENSITY_UUID); //Characteristic  UUID of fitnessband obtained through nRF connect application
+String My_BLE_Address = MAC_ADDRESS;           //Hardware Bluetooth MAC of my fitnessband, will vary for every band obtained through nRF connect application
+
+static BLERemoteCharacteristic *pRemoteCharacteristic;
+
+//Name the scanning device as pBLEScan
+BLEScan *pBLEScan;
+BLEScanResults foundDevices;
+
+static BLEAddress *Server_BLE_Address;
+String Scaned_BLE_Address;
+
+boolean paired = false; //boolean variable to togge light
+
+bool connectToserver(BLEAddress pAddress)
+{
+
+    BLEClient *pClient = BLEDevice::createClient();
+    Serial.println(" - Created client");
+
+    // Connect to the BLE Server.
+    pClient->connect(pAddress);
+    Serial.println(" - Connected to fitnessband");
+
+    // Obtain a reference to the service we are after in the remote BLE server.
+    BLERemoteService *pRemoteService = pClient->getService(serviceUUID);
+    if (pRemoteService != nullptr)
+    {
+        Serial.println(" - Found our service");
+        return true;
+    }
+    else
+        return false;
+
+    // Obtain a reference to the characteristic in the service of the remote BLE server.
+    pRemoteCharacteristic = pRemoteService->getCharacteristic(charUUID);
+    if (pRemoteCharacteristic != nullptr)
+        Serial.println(" - Found our characteristic");
+
+    return true;
+}
+
+class MyAdvertisedDeviceCallbacks : public BLEAdvertisedDeviceCallbacks
+{
+    void onResult(BLEAdvertisedDevice advertisedDevice)
+    {
+        Serial.printf("Scan Result: %s \n", advertisedDevice.toString().c_str());
+        Server_BLE_Address = new BLEAddress(advertisedDevice.getAddress());
+
+        Scaned_BLE_Address = Server_BLE_Address->toString().c_str();
+    }
+};
 
 void setup()
 {
@@ -55,10 +115,61 @@ void setup()
     Serial.println("IP address: ");
     Serial.println(WiFi.localIP());
     server.begin();
+
+    Serial.println("ESP32 BLE Server program"); //Intro message
+
+    BLEDevice::init("");
+    pBLEScan = BLEDevice::getScan();                                           //create new scan
+    pBLEScan->setAdvertisedDeviceCallbacks(new MyAdvertisedDeviceCallbacks()); //Call the class that is defined above
+    pBLEScan->setActiveScan(true);                                             //active scan uses more power, but get results faster
+}
+
+void writeBluetoothValue(const char * lightString)
+{
+    Serial.print("Setting output to ");
+    Serial.println(lightString);
+
+    while (foundDevices.getCount() >= 1)
+    {
+        if (Scaned_BLE_Address == My_BLE_Address && paired == false)
+        {
+            Serial.println("Found Device :-)... connecting to Server as client");
+            if (connectToserver(*Server_BLE_Address))
+            {
+                paired = true;
+                Serial.println("********************LED turned ON************************");
+                digitalWrite(13, HIGH);
+                break;
+            }
+            else
+            {
+                Serial.println("Pairing failed");
+                break;
+            }
+        }
+
+        if (Scaned_BLE_Address == My_BLE_Address && paired == true)
+        {
+            Serial.println("Our device went out of range");
+            paired = false;
+            Serial.println("********************LED OOOFFFFF************************");
+            digitalWrite(13, LOW);
+            ESP.restart();
+            break;
+        }
+        else
+        {
+            Serial.println("We have some other BLe device in range");
+            break;
+        }
+    }
 }
 
 void loop()
 {
+
+    foundDevices = pBLEScan->start(3); //Scan for 3 seconds to find the Fitness band
+
     WiFiClient client = server.available(); // Listen for incoming clients
 
     if (client)
@@ -90,15 +201,16 @@ void loop()
                         {
                             Serial.println("Light turned on");
                             lightState = "on";
-                            digitalWrite(light, HIGH);
+                            // digitalWrite(light, HIGH);
                         }
                         else if (header.indexOf("GET /light/off") >= 0)
                         {
                             Serial.println("Light turned off");
                             lightState = "off";
-                            digitalWrite(light, LOW);
+                            // digitalWrite(light, LOW);
                         }
 
+                        writeBluetoothValue("00FFAA");
 
                         // Display the HTML web page
                         client.println("<!DOCTYPE html><html>");
